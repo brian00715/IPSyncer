@@ -8,7 +8,7 @@ User=root
 Group=root
 WorkingDirectory=<REPO DIR>
 Environment=PYTHONUNBUFFERED=1
-ExecStart=python3 client.py --server <FILLME> --publish <FILLME> --subscribe <FILLME> --mapping <FILLME>
+ExecStart=python3 client.py --server <FILLME> --interval <INTERVAL> --publish <FILLME> --subscribe <FILLME> --mapping <FILLME>
 Restart=always
 RestartSec=3
 

@@ -155,6 +155,7 @@ class IPClient:
                             parts[0] = new_ip
                             line = " ".join(parts)
                             updated = True
+                            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {hostname} is updated to {new_ip}")
                         hostname_updated.add(hostname)
 
                 new_hosts_lines.append(line)
@@ -162,12 +163,7 @@ class IPClient:
             # Add new hostname entries
             for hostname, ip in host_ips.items():
                 if hostname not in hostname_updated:
-                    # Get mapped hostname (if any)
-                    mapped_hostname = self.get_hostname_for_interface(hostname, None)
-                    if mapped_hostname:
-                        new_hosts_lines.append(f"{ip} {mapped_hostname}")
-                    else:
-                        new_hosts_lines.append(f"{ip} {hostname}")
+                    new_hosts_lines.append(f"{ip} {hostname}")
 
             # Write updated hosts file
             with open("/etc/hosts", "w") as f:
