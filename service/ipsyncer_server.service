@@ -4,11 +4,11 @@ After=network.target
 
 [Service]
 Type=simple
-User=%i
-Group=%i
+User=<USER>
+Group=<USER>
 WorkingDirectory=<REPO DIR>
 Environment=PYTHONUNBUFFERED=1
-ExecStart=python3 server.py --host 0.0.0.0 --port <PORT>
+ExecStart=python3 server.py --host 0.0.0.0 --port <PORT> --backup-interval <INTERVAL>
 Restart=always
 RestartSec=3
 

@@ -65,168 +65,178 @@ class IPClient:
         self.server_url = server_url
         self.update_interval = update_interval
         self.hosts_file = "/etc/hosts"
-        # 要发布的网卡列表，如果为 None 则发布所有网卡
+        # List of interfaces to publish, if None then publish all interfaces
         self.interfaces = interfaces
-        # 要订阅的主机和网卡信息
-        # 格式: {
-        #   "hostname": ["interface1", "interface2"],  # 指定网卡
-        #   "hostname2": None  # 订阅所有网卡
+        # Hosts and interfaces to subscribe to
+        # Format: {
+        #   "hostname": ["interface1", "interface2"],  # specific interfaces
+        #   "hostname2": None  # subscribe to all interfaces
         # }
         self.subscribe_hosts = subscribe_hosts or {}
-        # 主机和网卡到主机名的映射
-        # 格式: {
+        # Mapping from host and interface to hostname
+        # Format: {
         #   "hostname:interface": "target_hostname"
         # }
         self.interface_mapping = interface_mapping or {}
 
     def publish_ips(self):
-        """发布本机的指定网卡 IP 地址到服务器"""
+        """Publish specified interface IP addresses to server"""
         interface_ips = parse_ifconfig(
             subprocess.check_output(["ifconfig"]).decode("utf-8"), self.interfaces
         )
         hostname = socket.gethostname()
 
-        # print(f"Publishing IPs for host {hostname}:")
         for interface, ip in interface_ips.items():
-            if ip:  # 只发布有 IP 的网卡
+            if ip:  # Only publish interfaces with IP
                 data = {"host": hostname, "ip": ip, "interface": interface}
 
                 try:
-                    # print(f"Sending publish request for {interface}: {ip}")
                     response = requests.post(f"{self.server_url}/publish", json=data)
                     if response.status_code == 200:
-                        print(f"Published IP {ip} for {hostname} {interface}")
+                        print(
+                            f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Published IP {ip} for {hostname} {interface}"
+                        )
                     else:
-                        print(f"Failed to publish IP for {interface}: {response.text}")
+                        print(
+                            f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Failed to publish IP for {interface}: {response.text}"
+                        )
                 except Exception as e:
-                    print(f"Error publishing IP for {interface}: {e}")
+                    print(
+                        f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Error publishing IP for {interface}: {e}"
+                    )
             else:
-                print(f"No IP found for interface {interface}")
+                print(
+                    f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] No IP found for interface {interface}"
+                )
 
     def get_hostname_for_interface(self, host, interface):
-        """根据主机名和网卡名称获取对应的主机名"""
-        # 检查是否有特定的映射规则
+        """Get corresponding hostname based on host and interface name"""
+        # Check for specific mapping rules
         mapping_key = f"{host}:{interface}"
         if mapping_key in self.interface_mapping:
             return self.interface_mapping[mapping_key]
-        # 如果没有映射规则，使用默认格式
+        # If no mapping rule, use default format
         return f"{host}-{interface}"
 
     def update_hosts(self, host_ips):
-        """更新 hosts 文件"""
+        """Update hosts file"""
         try:
-            # 读取现有的 hosts 文件
-            with open('/etc/hosts', 'r') as f:
+            # Read existing hosts file
+            with open("/etc/hosts", "r") as f:
                 hosts_lines = f.readlines()
-            
-            # 创建新的 hosts 内容
+
+            # Create new hosts content
             new_hosts_lines = []
-            hostname_updated = set()  # 用于跟踪已更新的主机名
-            
-            # 处理现有行
+            hostname_updated = set()  # Track updated hostnames
+
+            # Process existing lines
             for line in hosts_lines:
                 line = line.strip()
-                if not line or line.startswith('#'):
+                if not line or line.startswith("#"):
                     new_hosts_lines.append(line)
                     continue
-                
+
                 parts = line.split()
                 if len(parts) < 2:
                     new_hosts_lines.append(line)
                     continue
-                
+
                 ip = parts[0]
                 hostnames = parts[1:]
-                
-                # 检查是否有需要更新的主机名
+
+                # Check if any hostnames need updating
                 updated = False
                 for i, hostname in enumerate(hostnames):
                     if hostname in host_ips:
-                        # 更新 IP 地址
+                        # Update IP address
                         new_ip = host_ips[hostname]
                         if new_ip != ip:
-                            # 替换 IP 地址，保持其他部分不变
+                            # Replace IP address, keep other parts unchanged
                             parts[0] = new_ip
-                            line = ' '.join(parts)
+                            line = " ".join(parts)
                             updated = True
                         hostname_updated.add(hostname)
-                
+
                 new_hosts_lines.append(line)
-            
-            # 添加新的主机名条目
+
+            # Add new hostname entries
             for hostname, ip in host_ips.items():
                 if hostname not in hostname_updated:
-                    # 获取映射的主机名（如果有）
+                    # Get mapped hostname (if any)
                     mapped_hostname = self.get_hostname_for_interface(hostname, None)
                     if mapped_hostname:
                         new_hosts_lines.append(f"{ip} {mapped_hostname}")
                     else:
                         new_hosts_lines.append(f"{ip} {hostname}")
-            
-            # 写入更新后的 hosts 文件
-            with open('/etc/hosts', 'w') as f:
-                f.write('\n'.join(new_hosts_lines) + '\n')
-            
-            print("Updated hosts file")
+
+            # Write updated hosts file
+            with open("/etc/hosts", "w") as f:
+                f.write("\n".join(new_hosts_lines) + "\n")
+
+            print(
+                f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Updated hosts file"
+            )
         except Exception as e:
-            print(f"Error updating hosts file: {e}")
+            print(
+                f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Error updating hosts file: {e}"
+            )
             import traceback
+
             traceback.print_exc()
 
     def run(self):
-        """运行客户端"""
+        """Run the client"""
         print(f"Starting IP client with server: {self.server_url}")
         print(f"Publishing interfaces: {self.interfaces}")
         print(f"Subscribing to hosts: {self.subscribe_hosts}")
         print(f"Hostname mapping: {self.interface_mapping}")
-        
+
         while True:
             try:
-                # 发布本机 IP
+                # Publish local IP
                 self.publish_ips()
-                
-                # 准备订阅请求数据
+
+                # Prepare subscription request data
                 subscribe_data = {"hosts": list(self.subscribe_hosts.keys())}
-                
-                # 如果有指定网卡，添加到请求数据中
+
+                # Add interface data if specified
                 interfaces_data = {}
                 for host, interfaces in self.subscribe_hosts.items():
                     if interfaces is not None:
                         interfaces_data[host] = interfaces
                 if interfaces_data:
                     subscribe_data["interfaces"] = interfaces_data
-                
-                # 获取其他机器的 IP
+
+                # Get IPs from other machines
                 response = requests.post(
                     f"{self.server_url}/subscribe", json=subscribe_data
                 )
                 if response.status_code == 200:
                     host_mappings = response.json()
-                    
-                    # 构建 host_ips 字典
+
+                    # Build host_ips dictionary
                     host_ips = {}
                     for host, info in host_mappings.items():
                         for interface, interface_info in info["interfaces"].items():
                             hostname = self.get_hostname_for_interface(host, interface)
                             if hostname:
                                 host_ips[hostname] = interface_info["ip"]
-                    
-                    # 更新 hosts 文件
+
                     self.update_hosts(host_ips)
                 else:
                     print(f"Failed to get host mappings: {response.text}")
-                
-                # 等待下一次更新
+
                 time.sleep(self.update_interval)
             except Exception as e:
                 print(f"Error in main loop: {e}")
                 import traceback
+
                 traceback.print_exc()
                 time.sleep(self.update_interval)
 
 
 def parse_subscribe_hosts(subscribe_str):
-    """解析订阅主机字符串"""
+    """Parse subscription hosts string"""
     subscribe_hosts = {}
     if subscribe_str:
         for item in subscribe_str.split(","):
@@ -241,11 +251,11 @@ def parse_subscribe_hosts(subscribe_str):
 
 
 def parse_interface_mapping(mapping_str):
-    """解析主机和网卡到主机名的映射字符串"""
+    """Parse host and interface to hostname mapping string"""
     mapping = {}
     if mapping_str:
         for item in mapping_str.split(","):
-            # 格式: host:interface=target_hostname
+            # Format: host:interface=target_hostname
             parts = item.split("=")
             if len(parts) == 2:
                 host_interface, target_hostname = parts
@@ -254,36 +264,35 @@ def parse_interface_mapping(mapping_str):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="IP 自动发布和订阅客户端")
+    parser = argparse.ArgumentParser(description="IP Auto-publish and Subscribe Client")
     parser.add_argument(
         "--server",
         default="http://localhost:8080",
-        help="服务器地址 (默认: http://localhost:8080)",
+        help="Server URL (default: http://localhost:8080)",
     )
     parser.add_argument(
-        "--interval", type=int, default=60, help="更新间隔（秒） (默认: 60)"
+        "--interval",
+        type=int,
+        default=60,
+        help="Update interval in seconds (default: 60)",
     )
     parser.add_argument(
-        "--publish", help="要发布的网卡列表，用逗号分隔 (例如: tun0,eth0)"
+        "--publish",
+        help="List of interfaces to publish, comma-separated (e.g., tun0,eth0)",
     )
     parser.add_argument(
         "--subscribe",
-        help="要订阅的主机和网卡，格式: host1:interface1+interface2,host2:interface3+interface4,host3",
+        help="Hosts and interfaces to subscribe to, format: host1:interface1+interface2,host2:interface3+interface4,host3",
     )
     parser.add_argument(
         "--mapping",
-        help="主机和网卡到主机名的映射，格式: host1:interface1=target1,host2:interface2=target2 (例如: host1:tun0=vpn1,host2:eth0=lan1)",
+        help="Mapping from host and interface to hostname, format: host1:interface1=target1,host2:interface2=target2 (e.g., host1:tun0=vpn1,host2:eth0=lan1)",
     )
 
     args = parser.parse_args()
 
-    # 解析要发布的网卡列表
     interfaces = args.publish.split(",") if args.publish else None
-
-    # 解析要订阅的主机和网卡
     subscribe_hosts = parse_subscribe_hosts(args.subscribe)
-
-    # 解析主机和网卡到主机名的映射
     interface_mapping = parse_interface_mapping(args.mapping)
 
     client = IPClient(

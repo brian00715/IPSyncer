@@ -9,14 +9,13 @@ import argparse
 
 app = Flask(__name__)
 
-# 配置文件路径
 curr_dir = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = "host_ip_data.json"
 BACKUP_DIR = curr_dir
-BACKUP_INTERVAL = 3600  # 1小时备份一次
+DEFAULT_BACKUP_INTERVAL = 7200  # Default backup interval in seconds
 
-# 存储 host:网卡信息 的字典
-# 格式: {
+# Dictionary to store host:interface information
+# Format: {
 #   "hostname": {
 #     "interfaces": {
 #       "tun0": {"ip": "1.2.3.4", "last_updated": "timestamp"},
@@ -29,19 +28,19 @@ host_ip_map = {}
 
 
 def ensure_backup_dir():
-    """确保备份目录存在"""
+    """Ensure backup directory exists"""
     if not os.path.exists(BACKUP_DIR):
         os.makedirs(BACKUP_DIR)
 
 
 def load_data():
-    """从文件加载数据"""
+    """Load data from file"""
     global host_ip_map
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r") as f:
                 host_ip_map = json.load(f)
-            # 确保每个主机记录都有正确的结构
+            # Ensure each host record has the correct structure
             for host in host_ip_map:
                 if "interfaces" not in host_ip_map[host]:
                     host_ip_map[host]["interfaces"] = {}
@@ -54,7 +53,7 @@ def load_data():
 
 
 def save_data():
-    """保存数据到文件"""
+    """Save data to file"""
     try:
         with open(DATA_FILE, "w") as f:
             json.dump(host_ip_map, f, indent=2)
@@ -64,7 +63,7 @@ def save_data():
 
 
 def create_backup():
-    """创建数据备份"""
+    """Create data backup"""
     ensure_backup_dir()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_file = os.path.join(BACKUP_DIR, f"host_ip_data_{timestamp}.json")
@@ -75,21 +74,20 @@ def create_backup():
         print(f"Error creating backup: {e}")
 
 
-def backup_task():
-    """定时备份任务"""
+def backup_task(interval):
+    """Scheduled backup task"""
     while True:
-        time.sleep(BACKUP_INTERVAL)
+        time.sleep(interval)
         create_backup()
 
 
 @app.route("/publish", methods=["POST"])
 def publish_ip():
-    """接收客户端发布的 IP 地址"""
+    """Receive IP address from client"""
     data = request.get_json()
-    # print(f"Received publish request: {data}")  # 添加请求数据日志
     
     if not data or "host" not in data or "ip" not in data or "interface" not in data:
-        print(f"Invalid request data: {data}")  # 添加错误数据日志
+        print(f"Invalid request data: {data}")
         return jsonify({"error": "Missing host, ip, or interface"}), 400
 
     host = data["host"]
@@ -97,27 +95,21 @@ def publish_ip():
     interface = data["interface"]
     timestamp = datetime.now().isoformat()
 
-    # print(f"Processing publish request for {host} {interface}: {ip}")  # 添加处理日志
-
-    # 初始化 host 数据结构（如果不存在）
     if host not in host_ip_map:
-        # print(f"Creating new host entry for {host}")  # 添加新主机日志
         host_ip_map[host] = {
             "interfaces": {},
             "last_updated": timestamp
         }
     elif "interfaces" not in host_ip_map[host]:
-        print(f"Adding interfaces dictionary for existing host {host}")  # 添加修复日志
+        print(f"Adding interfaces dictionary for existing host {host}")
         host_ip_map[host]["interfaces"] = {}
 
-    # 更新网卡 IP 信息
     host_ip_map[host]["interfaces"][interface] = {
         "ip": ip,
         "last_updated": timestamp
     }
     host_ip_map[host]["last_updated"] = timestamp
 
-    # 保存到文件
     save_data()
 
     print(f"Updated IP for host:{host} interface:{interface} ip:{ip}")
@@ -126,12 +118,12 @@ def publish_ip():
 
 @app.route("/subscribe", methods=["POST"])
 def subscribe():
-    """返回指定的 host:网卡信息 映射"""
+    """Return specified host:interface information mapping"""
     data = request.get_json()
     if not data or "hosts" not in data:
         return jsonify({"error": "Missing hosts parameter"}), 400
 
-    # 过滤指定的主机和网卡
+    # Filter specified hosts and interfaces
     filtered_data = {}
     for host in data["hosts"]:
         if host in host_ip_map:
@@ -140,31 +132,30 @@ def subscribe():
                 "last_updated": host_ip_map[host]["last_updated"]
             }
             
-            # 如果指定了网卡，只返回指定的网卡信息
+            # If interfaces are specified, only return those interface information
             if "interfaces" in data and host in data["interfaces"]:
                 for interface in data["interfaces"][host]:
                     if interface in host_ip_map[host]["interfaces"]:
                         filtered_data[host]["interfaces"][interface] = host_ip_map[host]["interfaces"][interface]
             else:
-                # 如果没有指定网卡，返回所有网卡信息
                 filtered_data[host]["interfaces"] = host_ip_map[host]["interfaces"]
 
     return jsonify(filtered_data)
 
 
 if __name__ == "__main__":
-    # 设置命令行参数
     parser = argparse.ArgumentParser(description='IP Server')
     parser.add_argument('--host', default='0.0.0.0', help='Server host (default: 0.0.0.0)')
     parser.add_argument('--port', type=int, default=8080, help='Server port (default: 8080)')
+    parser.add_argument('--backup-interval', type=int, default=DEFAULT_BACKUP_INTERVAL, 
+                       help=f'Backup interval in seconds (default: {DEFAULT_BACKUP_INTERVAL})')
     args = parser.parse_args()
+    
+    print(f"Backup interval: {args.backup_interval}")
 
-    # 加载现有数据
     load_data()
 
-    # 启动备份线程
-    backup_thread = threading.Thread(target=backup_task, daemon=True)
+    backup_thread = threading.Thread(target=backup_task, args=(args.backup_interval,), daemon=True)
     backup_thread.start()
 
-    # 启动服务器
     app.run(host=args.host, port=args.port)

@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-User=%i
-Group=%i
+User=<USER>
+Group=<USER>
 WorkingDirectory=<FILL ME>
 Environment=PYTHONUNBUFFERED=1
 ExecStart=python3 client.py --server <FILLME> --publish <FILLME> --subscribe <FILLME> --mapping <FILLME>
