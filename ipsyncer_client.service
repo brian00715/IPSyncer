@@ -1,0 +1,16 @@
+[Unit]
+Description=IPSyncer Client
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+Group=%i
+WorkingDirectory=<FILL ME>
+Environment=PYTHONUNBUFFERED=1
+ExecStart=<FILL ME>/.venv/bin/python client.py --server <FILLME> --publish <FILLME> --subscribe <FILLME> --mapping <FILLME>
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target 

@@ -1,0 +1,16 @@
+[Unit]
+Description=IPSyncer Server
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+Group=%i
+WorkingDirectory=<FILL ME>
+Environment=PYTHONUNBUFFERED=1
+ExecStart=<FILL ME>/.venv/bin/python server.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target 
