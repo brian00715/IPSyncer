@@ -6,9 +6,9 @@ After=network.target
 Type=simple
 User=%i
 Group=%i
-WorkingDirectory=<FILL ME>
+WorkingDirectory=<REPO DIR>
 Environment=PYTHONUNBUFFERED=1
-ExecStart=<FILL ME>/.venv/bin/python server.py
+ExecStart=python3 server.py --host 0.0.0.0 --port <PORT>
 Restart=always
 RestartSec=3
 

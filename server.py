@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 import threading
 import shutil
+import argparse
 
 app = Flask(__name__)
 
@@ -152,6 +153,12 @@ def subscribe():
 
 
 if __name__ == "__main__":
+    # 设置命令行参数
+    parser = argparse.ArgumentParser(description='IP Server')
+    parser.add_argument('--host', default='0.0.0.0', help='Server host (default: 0.0.0.0)')
+    parser.add_argument('--port', type=int, default=8080, help='Server port (default: 8080)')
+    args = parser.parse_args()
+
     # 加载现有数据
     load_data()
 
@@ -160,4 +167,4 @@ if __name__ == "__main__":
     backup_thread.start()
 
     # 启动服务器
-    app.run(host="0.0.0.0", port=8080)
+    app.run(host=args.host, port=args.port)
