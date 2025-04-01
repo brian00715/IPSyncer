@@ -4,9 +4,9 @@ After=network.target
 
 [Service]
 Type=simple
-User=<USER>
-Group=<USER>
-WorkingDirectory=<FILL ME>
+User=root
+Group=root
+WorkingDirectory=<REPO DIR>
 Environment=PYTHONUNBUFFERED=1
 ExecStart=python3 client.py --server <FILLME> --publish <FILLME> --subscribe <FILLME> --mapping <FILLME>
 Restart=always

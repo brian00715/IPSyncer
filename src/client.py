@@ -290,6 +290,7 @@ def main():
     )
 
     args = parser.parse_args()
+    print(f"interval: {args.interval}")
 
     interfaces = args.publish.split(",") if args.publish else None
     subscribe_hosts = parse_subscribe_hosts(args.subscribe)

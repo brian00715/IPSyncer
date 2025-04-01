@@ -24,7 +24,7 @@ pip install -r requirements.txt
 根据对应的安装目录和自定义配置编辑 `.service`文件，然后
 
 ```bash
-sudo cp ipsyncer_<server/client>.service /etc/systemd/system/
+sudo ln -s <REPO DIR>/service/ipsyncer_<server/client>.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable ipsyncer_<server/client>
 
@@ -60,7 +60,7 @@ sudo systemctl start ipsyncer_server
 sudo python client.py
 ```
 
-2. 发布指定网卡的 IP 地址：
+2. [ ] 发布指定网卡的 IP 地址：
 
 ```bash
 sudo python client.py --publish tun0,en0
@@ -69,7 +69,7 @@ sudo python client.py --publish tun0,en0
 3. 订阅其他机器的 IP 地址：
 
 ```bash
-sudo python client.py --subscribe host1:en0,host2:tun0
+sudo python client.py --subscribe host1:en0+eth0,host2:tun0
 ```
 
 4. 使用自定义主机名映射：
@@ -85,7 +85,7 @@ sudo python client.py \
     --server http://localhost:8080 \
     --interval 30 \
     --publish tun0,en0 \
-    --subscribe host1:en0,host2:tun0 \
+    --subscribe host1:en0+eth0,host2:tun0 \
     --mapping host1:en0=lan1,host2:tun0=vpn1
 ```
 
