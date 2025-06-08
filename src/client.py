@@ -3,6 +3,8 @@ import subprocess
 import time
 import socket
 import os
+import platform
+import psutil
 from datetime import datetime
 import argparse
 
@@ -53,6 +55,52 @@ def parse_ifconfig(ifconfig_output, interfaces=None):
     return ip_dict
 
 
+def parse_ipconfig(ipconfig_output, interfaces=None):
+    """
+    Parse the output of ipconfig command (Windows) and extract IP addresses for specified interfaces.
+
+    Args:
+        ipconfig_output (str): The output of the ipconfig command as a string
+        interfaces (list, optional): List of interface names to filter by.
+                                     If None, all interfaces are included.
+
+    Returns:
+        dict: A dictionary with interface names as keys and their IP addresses as values
+    """
+    ip_dict = {}
+    current_interface = None
+
+    lines = ipconfig_output.strip().split("\n")
+
+    for line in lines:
+        line = line.strip()
+
+        # Check if this line starts a new interface definition
+        if line and not line.startswith(" ") and "adapter" in line.lower():
+            # Extract interface name from "Ethernet adapter Local Area Connection:" format
+            if ":" in line:
+                current_interface = line.split(":")[0].strip()
+                # Clean up the interface name
+                if "adapter" in current_interface.lower():
+                    current_interface = current_interface.split("adapter")[-1].strip()
+
+            # Skip this interface if we have a filter and it's not in the list
+            if interfaces and current_interface not in interfaces:
+                current_interface = None
+
+        # Look for IPv4 Address
+        elif current_interface and "IPv4 Address" in line:
+            # Extract IP from "   IPv4 Address. . . . . . . . . . . : 192.168.1.100"
+            if ":" in line:
+                ip = line.split(":")[-1].strip()
+                # Remove any additional info like "(Preferred)"
+                if "(" in ip:
+                    ip = ip.split("(")[0].strip()
+                ip_dict[current_interface] = ip
+
+    return ip_dict
+
+
 class IPClient:
     def __init__(
         self,
@@ -64,7 +112,14 @@ class IPClient:
     ):
         self.server_url = server_url
         self.update_interval = update_interval
-        self.hosts_file = "/etc/hosts"
+
+        # Set hosts file path based on OS
+        self.os_type = platform.system().lower()
+        if self.os_type == "windows":
+            self.hosts_file = r"C:\Windows\System32\drivers\etc\hosts"
+        else:
+            self.hosts_file = "/etc/hosts"
+
         # List of interfaces to publish, if None then publish all interfaces
         self.interfaces = interfaces
         # Hosts and interfaces to subscribe to
@@ -79,11 +134,25 @@ class IPClient:
         # }
         self.interface_mapping = interface_mapping or {}
 
+    def get_network_interfaces(self):
+        """Get network interface information based on OS"""
+        try:
+            if self.os_type == "windows":
+                output = subprocess.check_output(["ipconfig"], shell=True).decode("utf-8", errors='ignore')
+                return parse_ipconfig(output, self.interfaces)
+            else:
+                output = subprocess.check_output(["ifconfig"]).decode("utf-8")
+                return parse_ifconfig(output, self.interfaces)
+        except subprocess.CalledProcessError as e:
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Error getting network interfaces: {e}")
+            return {}
+        except Exception as e:
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Error parsing network interfaces: {e}")
+            return {}
+
     def publish_ips(self):
         """Publish specified interface IP addresses to server"""
-        interface_ips = parse_ifconfig(
-            subprocess.check_output(["ifconfig"]).decode("utf-8"), self.interfaces
-        )
+        interface_ips = self.get_network_interfaces()
         hostname = socket.gethostname()
 
         for interface, ip in interface_ips.items():
@@ -122,7 +191,7 @@ class IPClient:
         """Update hosts file"""
         try:
             # Read existing hosts file
-            with open("/etc/hosts", "r") as f:
+            with open(self.hosts_file, "r", encoding="utf-8", errors="ignore") as f:
                 hosts_lines = f.readlines()
 
             # Create new hosts content
@@ -166,23 +235,25 @@ class IPClient:
                     new_hosts_lines.append(f"{ip} {hostname}")
 
             # Write updated hosts file
-            with open("/etc/hosts", "w") as f:
+            with open(self.hosts_file, "w", encoding="utf-8") as f:
                 f.write("\n".join(new_hosts_lines) + "\n")
 
             print(
-                f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Updated hosts file"
+                f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Updated hosts file at {self.hosts_file}"
             )
         except Exception as e:
             print(
                 f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Error updating hosts file: {e}"
             )
+            if self.os_type == "windows":
+                print("Note: On Windows, you may need to run as Administrator to modify the hosts file")
             import traceback
-
             traceback.print_exc()
 
     def run(self):
         """Run the client"""
-        print(f"Starting IP client with server: {self.server_url}")
+        print(f"Starting IP client on {self.os_type.title()} with server: {self.server_url}")
+        print(f"Hosts file location: {self.hosts_file}")
         print(f"Publishing interfaces: {self.interfaces}")
         print(f"Subscribing to hosts: {self.subscribe_hosts}")
         print(f"Hostname mapping: {self.interface_mapping}")
@@ -231,31 +302,33 @@ class IPClient:
                 time.sleep(self.update_interval)
 
 
-def parse_subscribe_hosts(subscribe_str):
-    """Parse subscription hosts string"""
+def parse_subscribe_hosts(subscribe_list):
+    """Parse subscription hosts string list"""
     subscribe_hosts = {}
-    if subscribe_str:
-        for item in subscribe_str.split(","):
-            parts = item.split(":")
-            host = parts[0]
-            if len(parts) > 1:
-                interfaces = parts[1].split("+")
-                subscribe_hosts[host] = interfaces
-            else:
-                subscribe_hosts[host] = None
+    if subscribe_list:
+        for subscribe_str in subscribe_list:
+            for item in subscribe_str.split(","):
+                parts = item.split(":")
+                host = parts[0]
+                if len(parts) > 1:
+                    interfaces = parts[1].split("+")
+                    subscribe_hosts[host] = interfaces
+                else:
+                    subscribe_hosts[host] = None
     return subscribe_hosts
 
 
-def parse_interface_mapping(mapping_str):
-    """Parse host and interface to hostname mapping string"""
+def parse_interface_mapping(mapping_list):
+    """Parse host and interface to hostname mapping string list"""
     mapping = {}
-    if mapping_str:
-        for item in mapping_str.split(","):
-            # Format: host:interface=target_hostname
-            parts = item.split("=")
-            if len(parts) == 2:
-                host_interface, target_hostname = parts
-                mapping[host_interface] = target_hostname
+    if mapping_list:
+        for mapping_str in mapping_list:
+            for item in mapping_str.split(","):
+                # Format: host:interface=target_hostname
+                parts = item.split("=")
+                if len(parts) == 2:
+                    host_interface, target_hostname = parts
+                    mapping[host_interface] = target_hostname
     return mapping
 
 
@@ -278,16 +351,17 @@ def main():
     )
     parser.add_argument(
         "--subscribe",
-        help="Hosts and interfaces to subscribe to, format: host1:interface1+interface2,host2:interface3+interface4,host3",
+        action="append",
+        help="Hosts and interfaces to subscribe to, format: host1:interface1+interface2,host2:interface3+interface4,host3 (can be used multiple times)",
     )
     parser.add_argument(
         "--mapping",
-        help="Mapping from host and interface to hostname, format: host1:interface1=target1,host2:interface2=target2 (e.g., host1:tun0=vpn1,host2:eth0=lan1)",
+        action="append",
+        help="Mapping from host and interface to hostname, format: host1:interface1=target1,host2:interface2=target2 (e.g., host1:tun0=vpn1,host2:eth0=lan1) (can be used multiple times)",
     )
 
     args = parser.parse_args()
     print(f"interval: {args.interval}")
-
     interfaces = args.publish.split(",") if args.publish else None
     subscribe_hosts = parse_subscribe_hosts(args.subscribe)
     interface_mapping = parse_interface_mapping(args.mapping)

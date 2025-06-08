@@ -3,3 +3,5 @@
 host_ip_data.json
 test.py
 launch_client.sh
+tmp
+**.json

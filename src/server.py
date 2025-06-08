@@ -64,6 +64,16 @@ def save_data():
 
 def create_backup():
     """Create data backup"""
+    # Create empty data file if it doesn't exist
+    if not os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "w") as f:
+                json.dump({}, f, indent=2)
+            print(f"Created empty data file: {DATA_FILE}")
+        except Exception as e:
+            print(f"Error creating empty data file: {e}")
+            return
+
     ensure_backup_dir()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_file = os.path.join(BACKUP_DIR, f"host_ip_data_{timestamp}.json")
@@ -85,7 +95,7 @@ def backup_task(interval):
 def publish_ip():
     """Receive IP address from client"""
     data = request.get_json()
-    
+
     if not data or "host" not in data or "ip" not in data or "interface" not in data:
         print(f"Invalid request data: {data}")
         return jsonify({"error": "Missing host, ip, or interface"}), 400
@@ -131,7 +141,7 @@ def subscribe():
                 "interfaces": {},
                 "last_updated": host_ip_map[host]["last_updated"]
             }
-            
+
             # If interfaces are specified, only return those interface information
             if "interfaces" in data and host in data["interfaces"]:
                 for interface in data["interfaces"][host]:
@@ -147,10 +157,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='IP Server')
     parser.add_argument('--host', default='0.0.0.0', help='Server host (default: 0.0.0.0)')
     parser.add_argument('--port', type=int, default=8080, help='Server port (default: 8080)')
-    parser.add_argument('--backup-interval', type=int, default=DEFAULT_BACKUP_INTERVAL, 
+    parser.add_argument('--backup-interval', type=int, default=DEFAULT_BACKUP_INTERVAL,
                        help=f'Backup interval in seconds (default: {DEFAULT_BACKUP_INTERVAL})')
     args = parser.parse_args()
-    
+
     print(f"Backup interval: {args.backup_interval}")
 
     load_data()
