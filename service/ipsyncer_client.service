@@ -6,11 +6,11 @@ After=network.target
 Type=simple
 User=root
 Group=root
-WorkingDirectory=<REPO DIR>
+WorkingDirectory=/home/simon/Apps/IPSyncer/src
 Environment=PYTHONUNBUFFERED=1
-ExecStart=python3 client.py --server <FILLME> --interval <INTERVAL> --publish <FILLME> --subscribe <FILLME> --mapping <FILLME>
-Restart=always
+ExecStart=/home/simon/miniconda3/bin/python client.py --config config.yaml
+
 RestartSec=3
 
 [Install]
-WantedBy=multi-user.target 
+WantedBy=multi-user.target

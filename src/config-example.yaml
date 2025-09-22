@@ -1,0 +1,7 @@
+server: "http://xxx.com:10086"
+interval: 3600
+publish: ["wlp132s0", "enp131s0", "cscotun0"]
+subscribe:
+  - "host1:wlp132s0+eth"
+mapping:
+  - "host2:wlp132s0=host2-wifi"

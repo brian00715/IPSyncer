@@ -5,3 +5,4 @@ test.py
 launch_client.sh
 tmp
 **.json
+src/config.yaml

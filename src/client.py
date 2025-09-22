@@ -6,7 +6,9 @@ import os
 import platform
 import psutil
 from datetime import datetime
+
 import argparse
+import yaml
 
 
 def parse_ifconfig(ifconfig_output, interfaces=None):
@@ -333,16 +335,22 @@ def parse_interface_mapping(mapping_list):
 
 
 def main():
+
     parser = argparse.ArgumentParser(description="IP Auto-publish and Subscribe Client")
     parser.add_argument(
+        "--config",
+        type=str,
+        help="YAML config file path (overrides all other options if set)",
+    )
+    parser.add_argument(
         "--server",
-        default="http://localhost:8080",
+        default=None,
         help="Server URL (default: http://localhost:8080)",
     )
     parser.add_argument(
         "--interval",
         type=int,
-        default=60,
+        default=None,
         help="Update interval in seconds (default: 60)",
     )
     parser.add_argument(
@@ -352,22 +360,34 @@ def main():
     parser.add_argument(
         "--subscribe",
         action="append",
-        help="Hosts and interfaces to subscribe to, format: host1:interface1+interface2,host2:interface3+interface4,host3 (can be used multiple times)",
+        help="Hosts and interfaces to subscribe to, can be used multiple times",
     )
     parser.add_argument(
         "--mapping",
         action="append",
-        help="Mapping from host and interface to hostname, format: host1:interface1=target1,host2:interface2=target2 (e.g., host1:tun0=vpn1,host2:eth0=lan1) (can be used multiple times)",
+        help="Mapping from host and interface to hostname, can be used multiple times",
     )
 
     args = parser.parse_args()
-    print(f"interval: {args.interval}")
-    interfaces = args.publish.split(",") if args.publish else None
-    subscribe_hosts = parse_subscribe_hosts(args.subscribe)
-    interface_mapping = parse_interface_mapping(args.mapping)
+
+    config = {}
+    if args.config:
+        with open(args.config, 'r') as f:
+            config = yaml.safe_load(f)
+
+    # 优先级: 命令行 > yaml > 默认
+    server = args.server or config.get('server', 'http://localhost:8080')
+    interval = args.interval if args.interval is not None else config.get('interval', 60)
+    publish = args.publish or config.get('publish')
+    subscribe = args.subscribe or config.get('subscribe')
+    mapping = args.mapping or config.get('mapping')
+
+    interfaces = publish.split(",") if isinstance(publish, str) else publish
+    subscribe_hosts = parse_subscribe_hosts(subscribe)
+    interface_mapping = parse_interface_mapping(mapping)
 
     client = IPClient(
-        args.server, args.interval, interfaces, subscribe_hosts, interface_mapping
+        server, interval, interfaces, subscribe_hosts, interface_mapping
     )
     client.run()
 
