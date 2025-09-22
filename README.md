@@ -44,49 +44,45 @@ sudo systemctl start ipsyncer_server
 
 ### 启动客户端
 
-客户端支持以下参数：
+#### 推荐方式：基于 YAML 配置文件
 
-- `--server`: 服务器地址（默认：http://localhost:8080）
-- `--interval`: 更新间隔（秒）（默认：60）
-- `--publish`: 要发布的网卡列表，用逗号分隔
-- `--subscribe`: 要订阅的主机和网卡
-- `--mapping`: 主机和网卡到主机名的映射
+1. 编辑 `src/config.yaml`，填写你的发布、订阅和映射需求。例如：
 
-#### 示例
-
-1. 发布所有网卡的 IP 地址：
-
-```bash
-sudo python client.py
+```yaml
+server: "http://xxx.com:10086"
+interval: 3600
+publish: ["wlp132s0", "enp131s0", "cscotun0"]
+subscribe:
+    - "simon-omen-ubuntu:tun0+wlp0s20f3"
+    - "unitree-go2:wlan0+eth0"
+mapping:
+    - "simon-omen-ubuntu:tun0=simon-omen-nus-vpn"
 ```
 
-2. [ ] 发布指定网卡的 IP 地址：
+2. 使用 systemd 启动（推荐）：
 
 ```bash
-sudo python client.py --publish tun0,en0
+sudo systemctl start ipsyncer_client
 ```
 
-3. 订阅其他机器的 IP 地址：
+或手动运行：
 
 ```bash
-sudo python client.py --subscribe host1:en0+eth0,host2:tun0
+sudo python client.py --config config.yaml
 ```
 
-4. 使用自定义主机名映射：
+> 命令行参数依然支持，且优先级高于 YAML 配置。例如：
+>
+> ```bash
+> sudo python client.py --config config.yaml --interval 120
+> ```
+
+#### 兼容旧参数
+
+仍可直接用命令行参数（不推荐）：
 
 ```bash
-sudo python client.py --mapping host1:en0=lan1,host2:tun0=vpn1
-```
-
-5. 完整示例：
-
-```bash
-sudo python client.py \
-    --server http://localhost:8080 \
-    --interval 30 \
-    --publish tun0,en0 \
-    --subscribe host1:en0+eth0,host2:tun0 \
-    --mapping host1:en0=lan1,host2:tun0=vpn1
+sudo python client.py --server http://localhost:8080 --publish tun0,en0 --subscribe host1:en0+eth0 --mapping host1:en0=lan1
 ```
 
 ## 数据格式
