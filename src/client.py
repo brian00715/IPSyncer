@@ -114,12 +114,14 @@ class IPClient:
         config_file=None,
         dry_run=False,
         subscribe_all=False,
+        password=None,
     ):
         self.server_url = server_url
         self.update_interval = update_interval
         self.config_file = config_file
         self.dry_run = dry_run
         self.subscribe_all = subscribe_all
+        self.password = password
 
         # Set hosts file path based on OS
         self.os_type = platform.system().lower() if not self.dry_run else "fake"
@@ -169,6 +171,8 @@ class IPClient:
         for interface, ip in interface_ips.items():
             if ip:  # Only publish interfaces with IP
                 data = {"host": hostname, "ip": ip, "interface": interface}
+                if self.password:
+                    data["password"] = self.password
 
                 try:
                     response = requests.post(f"{self.server_url}/publish", json=data)
@@ -322,7 +326,10 @@ class IPClient:
 
                 # If subscribing to all and no hosts specified, get all hosts first
                 if self.subscribe_all and not self.subscribe_hosts:
-                    temp_response = requests.post(f"{self.server_url}/subscribe", json={"hosts": []})
+                    temp_data = {"hosts": []}
+                    if self.password:
+                        temp_data["password"] = self.password
+                    temp_response = requests.post(f"{self.server_url}/subscribe", json=temp_data)
                     if temp_response.status_code == 200:
                         temp_mappings = temp_response.json()
                         if "all_hosts" in temp_mappings:
@@ -338,6 +345,10 @@ class IPClient:
                         interfaces_data[host] = interfaces
                 if interfaces_data:
                     subscribe_data["interfaces"] = interfaces_data
+
+                # Add password if set
+                if self.password:
+                    subscribe_data["password"] = self.password
 
                 # Get IPs from other machines
                 response = requests.post(
@@ -447,6 +458,10 @@ def main():
         action="store_true",
         help="Run in dry-run mode without modifying the actual hosts file",
     )
+    parser.add_argument(
+        "--password",
+        help="Password for server authentication",
+    )
 
     args = parser.parse_args()
 
@@ -461,13 +476,14 @@ def main():
     publish = args.publish or config.get('publish')
     subscribe = args.subscribe or config.get('subscribe')
     mapping = args.mapping or config.get('mapping')
+    password = args.password or config.get('password')
 
     interfaces = publish.split(",") if isinstance(publish, str) else publish
     subscribe_hosts, subscribe_all = parse_subscribe_hosts(subscribe)
     interface_mapping = parse_interface_mapping(mapping)
 
     client = IPClient(
-        server, interval, interfaces, subscribe_hosts, interface_mapping, args.config, args.dry_run, subscribe_all
+        server, interval, interfaces, subscribe_hosts, interface_mapping, args.config, args.dry_run, subscribe_all, password
     )
     client.run()
 

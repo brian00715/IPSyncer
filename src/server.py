@@ -14,6 +14,9 @@ DATA_FILE = "host_ip_data.json"
 BACKUP_DIR = curr_dir
 DEFAULT_BACKUP_INTERVAL = 7200  # Default backup interval in seconds
 
+# Authentication
+server_password = None
+
 # Dictionary to store host:interface information
 # Format: {
 #   "hostname": {
@@ -91,10 +94,24 @@ def backup_task(interval):
         create_backup()
 
 
+def check_auth(data):
+    """Check authentication from request data"""
+    if server_password is None:
+        return True  # No password required
+
+    if not data or "password" not in data:
+        return False
+
+    return data["password"] == server_password
+
+
 @app.route("/publish", methods=["POST"])
 def publish_ip():
     """Receive IP address from client"""
     data = request.get_json()
+
+    if not check_auth(data):
+        return jsonify({"error": "Authentication failed"}), 401
 
     if not data or "host" not in data or "ip" not in data or "interface" not in data:
         print(f"Invalid request data: {data}")
@@ -130,6 +147,10 @@ def publish_ip():
 def subscribe():
     """Return specified host:interface information mapping"""
     data = request.get_json()
+
+    if not check_auth(data):
+        return jsonify({"error": "Authentication failed"}), 401
+
     if not data or "hosts" not in data:
         return jsonify({"error": "Missing hosts parameter"}), 400
 
@@ -169,9 +190,16 @@ if __name__ == "__main__":
     parser.add_argument('--port', type=int, default=8080, help='Server port (default: 8080)')
     parser.add_argument('--backup-interval', type=int, default=DEFAULT_BACKUP_INTERVAL,
                        help=f'Backup interval in seconds (default: {DEFAULT_BACKUP_INTERVAL})')
+    parser.add_argument('--password', help='Password for client authentication')
     args = parser.parse_args()
 
+    server_password = args.password
+
     print(f"Backup interval: {args.backup_interval}")
+    if args.password:
+        print("Password authentication enabled")
+    else:
+        print("Warning: No password set - clients can connect without authentication")
 
     load_data()
 
