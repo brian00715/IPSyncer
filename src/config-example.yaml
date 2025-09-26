@@ -1,7 +1,9 @@
-server: "http://xxx.com:10086"
-interval: 3600
-publish: ["wlp132s0", "enp131s0", "cscotun0"]
-subscribe:
-  - "host1:wlp132s0+eth"
+server: "http://localhost:8080"
+interval: 5
+publish: # left empty to publish all network interfaces
+subscribe: # use 'all' or left empty to subscribe all hosts
+# publish: ["wlp132s0", "enp131s0", "cscotun0"] # publish selected interfaces
+# subscribe:
+#   - "host1:wlp132s0+eth" # subscribe to host1's 2 interface
 mapping:
   - "host2:wlp132s0=host2-wifi"

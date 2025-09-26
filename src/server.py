@@ -150,6 +150,16 @@ def subscribe():
             else:
                 filtered_data[host]["interfaces"] = host_ip_map[host]["interfaces"]
 
+    # Check for new devices joined
+    all_hosts = set(host_ip_map.keys())
+    requested_hosts = set(data["hosts"])
+    new_hosts = all_hosts - requested_hosts
+    if new_hosts:
+        filtered_data["new_device_joined"] = True
+        filtered_data["all_hosts"] = list(all_hosts)
+    else:
+        filtered_data["new_device_joined"] = False
+
     return jsonify(filtered_data)
 
 

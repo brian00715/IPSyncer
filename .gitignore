@@ -6,3 +6,5 @@ launch_client.sh
 tmp
 **.json
 src/config.yaml
+**.pyc
+__pycache__

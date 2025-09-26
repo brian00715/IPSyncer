@@ -111,14 +111,23 @@ class IPClient:
         interfaces=None,
         subscribe_hosts=None,
         interface_mapping=None,
+        config_file=None,
+        dry_run=False,
+        subscribe_all=False,
     ):
         self.server_url = server_url
         self.update_interval = update_interval
+        self.config_file = config_file
+        self.dry_run = dry_run
+        self.subscribe_all = subscribe_all
 
         # Set hosts file path based on OS
-        self.os_type = platform.system().lower()
+        self.os_type = platform.system().lower() if not self.dry_run else "fake"
         if self.os_type == "windows":
             self.hosts_file = r"C:\Windows\System32\drivers\etc\hosts"
+        elif self.os_type == "fake":
+            self.hosts_file = "./fake_hosts"
+            with open(self.hosts_file, 'a'): os.utime(self.hosts_file, None)  # Create the file if it doesn't exist
         else:
             self.hosts_file = "/etc/hosts"
 
@@ -252,18 +261,72 @@ class IPClient:
             import traceback
             traceback.print_exc()
 
+    def update_service(self, all_hosts):
+        """Update config.yaml to subscribe to new hosts and reload service"""
+        if not self.config_file:
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] No config file specified, cannot update service")
+            return
+
+        try:
+            # Read current config
+            with open(self.config_file, 'r') as f:
+                config = yaml.safe_load(f)
+
+            # Get current subscribe list
+            current_subscribe = config.get('subscribe', [])
+            current_hosts = set()
+            for sub in current_subscribe:
+                host = sub.split(':')[0]
+                current_hosts.add(host)
+
+            # Add new hosts
+            new_hosts = set(all_hosts) - current_hosts
+            for host in new_hosts:
+                current_subscribe.append(host)  # Subscribe to all interfaces
+
+            # Update config
+            config['subscribe'] = current_subscribe
+
+            # Write back
+            with open(self.config_file, 'w') as f:
+                yaml.safe_dump(config, f, default_flow_style=False)
+
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Updated config.yaml with new hosts: {list(new_hosts)}")
+
+            # Reload systemd service
+            try:
+                if not self.dry_run:
+                    subprocess.run(['sudo', 'systemctl', 'restart', 'ipsyncer_client'], check=True)
+                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Reloaded and restarted ipsyncer_client service")
+            except subprocess.CalledProcessError as e:
+                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Error reloading service: {e}")
+
+        except Exception as e:
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Error updating service: {e}")
+            import traceback
+            traceback.print_exc()
+
     def run(self):
         """Run the client"""
         print(f"Starting IP client on {self.os_type.title()} with server: {self.server_url}")
         print(f"Hosts file location: {self.hosts_file}")
         print(f"Publishing interfaces: {self.interfaces}")
         print(f"Subscribing to hosts: {self.subscribe_hosts}")
+        print(f"Subscribe to all: {self.subscribe_all}")
         print(f"Hostname mapping: {self.interface_mapping}")
 
         while True:
             try:
                 # Publish local IP
                 self.publish_ips()
+
+                # If subscribing to all and no hosts specified, get all hosts first
+                if self.subscribe_all and not self.subscribe_hosts:
+                    temp_response = requests.post(f"{self.server_url}/subscribe", json={"hosts": []})
+                    if temp_response.status_code == 200:
+                        temp_mappings = temp_response.json()
+                        if "all_hosts" in temp_mappings:
+                            self.subscribe_hosts = {host: None for host in temp_mappings["all_hosts"]}
 
                 # Prepare subscription request data
                 subscribe_data = {"hosts": list(self.subscribe_hosts.keys())}
@@ -283,9 +346,15 @@ class IPClient:
                 if response.status_code == 200:
                     host_mappings = response.json()
 
+                    # If subscribing to all, update subscribe_hosts with all known hosts
+                    if self.subscribe_all and "all_hosts" in host_mappings:
+                        self.subscribe_hosts = {host: None for host in host_mappings["all_hosts"]}
+
                     # Build host_ips dictionary
                     host_ips = {}
                     for host, info in host_mappings.items():
+                        if host in ["new_device_joined", "all_hosts"]:
+                            continue  # Skip metadata
                         for interface, interface_info in info["interfaces"].items():
                             hostname = self.get_hostname_for_interface(host, interface)
                             if hostname:
@@ -307,17 +376,23 @@ class IPClient:
 def parse_subscribe_hosts(subscribe_list):
     """Parse subscription hosts string list"""
     subscribe_hosts = {}
+    subscribe_all = False
     if subscribe_list:
         for subscribe_str in subscribe_list:
             for item in subscribe_str.split(","):
-                parts = item.split(":")
-                host = parts[0]
-                if len(parts) > 1:
-                    interfaces = parts[1].split("+")
-                    subscribe_hosts[host] = interfaces
+                if item == "all":
+                    subscribe_all = True
                 else:
-                    subscribe_hosts[host] = None
-    return subscribe_hosts
+                    parts = item.split(":")
+                    host = parts[0]
+                    if len(parts) > 1:
+                        interfaces = parts[1].split("+")
+                        subscribe_hosts[host] = interfaces
+                    else:
+                        subscribe_hosts[host] = None
+    else:
+        subscribe_all = True  # Default to subscribe all if no specific hosts provided
+    return subscribe_hosts, subscribe_all
 
 
 def parse_interface_mapping(mapping_list):
@@ -367,6 +442,11 @@ def main():
         action="append",
         help="Mapping from host and interface to hostname, can be used multiple times",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run in dry-run mode without modifying the actual hosts file",
+    )
 
     args = parser.parse_args()
 
@@ -383,11 +463,11 @@ def main():
     mapping = args.mapping or config.get('mapping')
 
     interfaces = publish.split(",") if isinstance(publish, str) else publish
-    subscribe_hosts = parse_subscribe_hosts(subscribe)
+    subscribe_hosts, subscribe_all = parse_subscribe_hosts(subscribe)
     interface_mapping = parse_interface_mapping(mapping)
 
     client = IPClient(
-        server, interval, interfaces, subscribe_hosts, interface_mapping
+        server, interval, interfaces, subscribe_hosts, interface_mapping, args.config, args.dry_run, subscribe_all
     )
     client.run()
 
