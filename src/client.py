@@ -1,6 +1,7 @@
 import argparse
 import os
 import platform
+import re
 import socket
 import subprocess
 import time
@@ -9,6 +10,16 @@ from datetime import datetime
 import psutil
 import requests
 import yaml
+
+EXCLUDED_INTERFACE_PATTERNS = ["lo", "docker0", "utun.*"]
+
+
+def is_excluded_interface(interface):
+    """Check if an interface should be excluded based on patterns"""
+    for pattern in EXCLUDED_INTERFACE_PATTERNS:
+        if re.match(pattern, interface):
+            return True
+    return False
 
 
 def parse_ifconfig(ifconfig_output, interfaces=None):
@@ -155,10 +166,16 @@ class IPClient:
         try:
             if self.os_type == "windows":
                 output = subprocess.check_output(["ipconfig"], shell=True).decode("utf-8", errors="ignore")
-                return parse_ipconfig(output, self.interfaces)
+                ip_dict = parse_ipconfig(output, self.interfaces)
             else:
                 output = subprocess.check_output(["ifconfig"]).decode("utf-8")
-                return parse_ifconfig(output, self.interfaces)
+                ip_dict = parse_ifconfig(output, self.interfaces)
+
+            # Filter out excluded interfaces
+            filtered_ip_dict = {
+                interface: ip for interface, ip in ip_dict.items() if not is_excluded_interface(interface)
+            }
+            return filtered_ip_dict
         except subprocess.CalledProcessError as e:
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Error getting network interfaces: {e}")
             return {}
@@ -394,8 +411,11 @@ class IPClient:
                         if host in ["new_device_joined", "all_hosts"]:
                             continue  # Skip metadata
                         for interface, interface_info in info["interfaces"].items():
+                            # Skip excluded interfaces
+                            if is_excluded_interface(interface):
+                                continue
                             hostname = self.get_hostname_for_interface(host, interface)
-                            if hostname:
+                            if hostname and not hostname.startswith(self.hostname):
                                 host_ips[hostname] = interface_info["ip"]
 
                     self.update_hosts(host_ips)
