@@ -6,9 +6,9 @@ After=network.target
 Type=simple
 User=root
 Group=root
-WorkingDirectory=/home/simon/Apps/IPSyncer/src
+WorkingDirectory=<REPO DIR>
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/home/simon/miniconda3/bin/python client.py --config config.yaml
+ExecStart=<PYTHON DIR>/python client.py --config config.yaml
 
 RestartSec=3
 
