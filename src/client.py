@@ -14,9 +14,11 @@ import yaml
 EXCLUDED_INTERFACE_PATTERNS = ["lo", "docker0", "utun.*"]
 
 
-def is_excluded_interface(interface):
+def is_excluded_interface(interface, patterns=None):
     """Check if an interface should be excluded based on patterns"""
-    for pattern in EXCLUDED_INTERFACE_PATTERNS:
+    if patterns is None:
+        patterns = EXCLUDED_INTERFACE_PATTERNS
+    for pattern in patterns:
         if re.match(pattern, interface):
             return True
     return False
@@ -126,6 +128,7 @@ class IPClient:
         dry_run=False,
         subscribe_all=False,
         password=None,
+        excluded_interface_patterns=None,
     ):
         self.server_url = server_url
         self.update_interval = update_interval
@@ -135,6 +138,7 @@ class IPClient:
         self.password = password
         self.token = None
         self.hostname = socket.gethostname()  # Store hostname for authentication
+        self.excluded_interface_patterns = excluded_interface_patterns or EXCLUDED_INTERFACE_PATTERNS
 
         # Set hosts file path based on OS
         self.os_type = platform.system().lower() if not self.dry_run else "fake"
@@ -173,7 +177,9 @@ class IPClient:
 
             # Filter out excluded interfaces
             filtered_ip_dict = {
-                interface: ip for interface, ip in ip_dict.items() if not is_excluded_interface(interface)
+                interface: ip
+                for interface, ip in ip_dict.items()
+                if not is_excluded_interface(interface, self.excluded_interface_patterns)
             }
             return filtered_ip_dict
         except subprocess.CalledProcessError as e:
@@ -412,7 +418,7 @@ class IPClient:
                             continue  # Skip metadata
                         for interface, interface_info in info["interfaces"].items():
                             # Skip excluded interfaces
-                            if is_excluded_interface(interface):
+                            if is_excluded_interface(interface, self.excluded_interface_patterns):
                                 continue
                             hostname = self.get_hostname_for_interface(host, interface)
                             if hostname and not hostname.startswith(self.hostname):
@@ -509,6 +515,11 @@ def main():
         "--password",
         help="Password for server authentication",
     )
+    parser.add_argument(
+        "--excluded-interface-patterns",
+        action="append",
+        help="Patterns of interfaces to exclude from publishing and subscribing, can be used multiple times",
+    )
 
     args = parser.parse_args()
 
@@ -524,6 +535,7 @@ def main():
     subscribe = args.subscribe or config.get("subscribe")
     mapping = args.mapping or config.get("mapping")
     password = args.password or config.get("password")
+    excluded_interface_patterns = args.excluded_interface_patterns or config.get("excluded_interface_patterns")
 
     interfaces = publish.split(",") if isinstance(publish, str) else publish
     subscribe_hosts, subscribe_all = parse_subscribe_hosts(subscribe)
@@ -539,6 +551,7 @@ def main():
         args.dry_run,
         subscribe_all,
         password,
+        excluded_interface_patterns,
     )
     client.run()
 
