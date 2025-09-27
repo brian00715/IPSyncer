@@ -1,13 +1,13 @@
-import requests
-import subprocess
-import time
-import socket
+import argparse
 import os
 import platform
-import psutil
+import socket
+import subprocess
+import time
 from datetime import datetime
 
-import argparse
+import psutil
+import requests
 import yaml
 
 
@@ -122,6 +122,8 @@ class IPClient:
         self.dry_run = dry_run
         self.subscribe_all = subscribe_all
         self.password = password
+        self.token = None
+        self.hostname = socket.gethostname()  # Store hostname for authentication
 
         # Set hosts file path based on OS
         self.os_type = platform.system().lower() if not self.dry_run else "fake"
@@ -129,7 +131,8 @@ class IPClient:
             self.hosts_file = r"C:\Windows\System32\drivers\etc\hosts"
         elif self.os_type == "fake":
             self.hosts_file = "./fake_hosts"
-            with open(self.hosts_file, 'a'): os.utime(self.hosts_file, None)  # Create the file if it doesn't exist
+            with open(self.hosts_file, "a"):
+                os.utime(self.hosts_file, None)  # Create the file if it doesn't exist
         else:
             self.hosts_file = "/etc/hosts"
 
@@ -151,7 +154,7 @@ class IPClient:
         """Get network interface information based on OS"""
         try:
             if self.os_type == "windows":
-                output = subprocess.check_output(["ipconfig"], shell=True).decode("utf-8", errors='ignore')
+                output = subprocess.check_output(["ipconfig"], shell=True).decode("utf-8", errors="ignore")
                 return parse_ipconfig(output, self.interfaces)
             else:
                 output = subprocess.check_output(["ifconfig"]).decode("utf-8")
@@ -171,8 +174,8 @@ class IPClient:
         for interface, ip in interface_ips.items():
             if ip:  # Only publish interfaces with IP
                 data = {"host": hostname, "ip": ip, "interface": interface}
-                if self.password:
-                    data["password"] = self.password
+                if self.token:
+                    data["token"] = self.token
 
                 try:
                     response = requests.post(f"{self.server_url}/publish", json=data)
@@ -185,13 +188,9 @@ class IPClient:
                             f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Failed to publish IP for {interface}: {response.text}"
                         )
                 except Exception as e:
-                    print(
-                        f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Error publishing IP for {interface}: {e}"
-                    )
+                    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Error publishing IP for {interface}: {e}")
             else:
-                print(
-                    f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] No IP found for interface {interface}"
-                )
+                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] No IP found for interface {interface}")
 
     def get_hostname_for_interface(self, host, interface):
         """Get corresponding hostname based on host and interface name"""
@@ -253,16 +252,13 @@ class IPClient:
             with open(self.hosts_file, "w", encoding="utf-8") as f:
                 f.write("\n".join(new_hosts_lines) + "\n")
 
-            print(
-                f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Updated hosts file at {self.hosts_file}"
-            )
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Updated hosts file at {self.hosts_file}")
         except Exception as e:
-            print(
-                f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Error updating hosts file: {e}"
-            )
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Error updating hosts file: {e}")
             if self.os_type == "windows":
                 print("Note: On Windows, you may need to run as Administrator to modify the hosts file")
             import traceback
+
             traceback.print_exc()
 
     def update_service(self, all_hosts):
@@ -273,14 +269,14 @@ class IPClient:
 
         try:
             # Read current config
-            with open(self.config_file, 'r') as f:
+            with open(self.config_file, "r") as f:
                 config = yaml.safe_load(f)
 
             # Get current subscribe list
-            current_subscribe = config.get('subscribe', [])
+            current_subscribe = config.get("subscribe", [])
             current_hosts = set()
             for sub in current_subscribe:
-                host = sub.split(':')[0]
+                host = sub.split(":")[0]
                 current_hosts.add(host)
 
             # Add new hosts
@@ -289,29 +285,62 @@ class IPClient:
                 current_subscribe.append(host)  # Subscribe to all interfaces
 
             # Update config
-            config['subscribe'] = current_subscribe
+            config["subscribe"] = current_subscribe
 
             # Write back
-            with open(self.config_file, 'w') as f:
+            with open(self.config_file, "w") as f:
                 yaml.safe_dump(config, f, default_flow_style=False)
 
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Updated config.yaml with new hosts: {list(new_hosts)}")
+            print(
+                f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Updated config.yaml with new hosts: {list(new_hosts)}"
+            )
 
             # Reload systemd service
             try:
                 if not self.dry_run:
-                    subprocess.run(['sudo', 'systemctl', 'restart', 'ipsyncer_client'], check=True)
-                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Reloaded and restarted ipsyncer_client service")
+                    subprocess.run(["sudo", "systemctl", "restart", "ipsyncer_client"], check=True)
+                print(
+                    f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Reloaded and restarted ipsyncer_client service"
+                )
             except subprocess.CalledProcessError as e:
                 print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Error reloading service: {e}")
 
         except Exception as e:
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Error updating service: {e}")
             import traceback
+
             traceback.print_exc()
+
+    def authenticate(self):
+        """Authenticate with server and get token"""
+        if not self.password:
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] No password set, skipping authentication")
+            return True
+
+        try:
+            response = requests.post(f"{self.server_url}/auth", json={"password": self.password, "host": self.hostname})
+            if response.status_code == 200:
+                data = response.json()
+                if "token" in data:
+                    self.token = data["token"]
+                    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Authentication successful, token received")
+                    return True
+                else:
+                    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Authentication failed: Invalid response")
+            else:
+                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Authentication failed: {response.text}")
+        except Exception as e:
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Authentication error: {e}")
+
+        return False
 
     def run(self):
         """Run the client"""
+        # Authenticate first
+        if not self.authenticate():
+            print("Failed to authenticate with server. Exiting.")
+            return
+
         print(f"Starting IP client on {self.os_type.title()} with server: {self.server_url}")
         print(f"Hosts file location: {self.hosts_file}")
         print(f"Publishing interfaces: {self.interfaces}")
@@ -327,8 +356,8 @@ class IPClient:
                 # If subscribing to all and no hosts specified, get all hosts first
                 if self.subscribe_all and not self.subscribe_hosts:
                     temp_data = {"hosts": []}
-                    if self.password:
-                        temp_data["password"] = self.password
+                    if self.token:
+                        temp_data["token"] = self.token
                     temp_response = requests.post(f"{self.server_url}/subscribe", json=temp_data)
                     if temp_response.status_code == 200:
                         temp_mappings = temp_response.json()
@@ -346,14 +375,12 @@ class IPClient:
                 if interfaces_data:
                     subscribe_data["interfaces"] = interfaces_data
 
-                # Add password if set
-                if self.password:
-                    subscribe_data["password"] = self.password
+                # Add token if authenticated
+                if self.token:
+                    subscribe_data["token"] = self.token
 
                 # Get IPs from other machines
-                response = requests.post(
-                    f"{self.server_url}/subscribe", json=subscribe_data
-                )
+                response = requests.post(f"{self.server_url}/subscribe", json=subscribe_data)
                 if response.status_code == 200:
                     host_mappings = response.json()
 
@@ -467,23 +494,31 @@ def main():
 
     config = {}
     if args.config:
-        with open(args.config, 'r') as f:
+        with open(args.config, "r") as f:
             config = yaml.safe_load(f)
 
     # 优先级: 命令行 > yaml > 默认
-    server = args.server or config.get('server', 'http://localhost:8080')
-    interval = args.interval if args.interval is not None else config.get('interval', 60)
-    publish = args.publish or config.get('publish')
-    subscribe = args.subscribe or config.get('subscribe')
-    mapping = args.mapping or config.get('mapping')
-    password = args.password or config.get('password')
+    server = args.server or config.get("server", "http://localhost:8080")
+    interval = args.interval if args.interval is not None else config.get("interval", 60)
+    publish = args.publish or config.get("publish")
+    subscribe = args.subscribe or config.get("subscribe")
+    mapping = args.mapping or config.get("mapping")
+    password = args.password or config.get("password")
 
     interfaces = publish.split(",") if isinstance(publish, str) else publish
     subscribe_hosts, subscribe_all = parse_subscribe_hosts(subscribe)
     interface_mapping = parse_interface_mapping(mapping)
 
     client = IPClient(
-        server, interval, interfaces, subscribe_hosts, interface_mapping, args.config, args.dry_run, subscribe_all, password
+        server,
+        interval,
+        interfaces,
+        subscribe_hosts,
+        interface_mapping,
+        args.config,
+        args.dry_run,
+        subscribe_all,
+        password,
     )
     client.run()
 

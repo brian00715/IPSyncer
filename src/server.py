@@ -1,11 +1,12 @@
-from flask import Flask, request, jsonify
-import time
+import argparse
 import json
 import os
-from datetime import datetime
-import threading
 import shutil
-import argparse
+import threading
+import time
+from datetime import datetime
+
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
@@ -42,7 +43,8 @@ def load_data():
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r") as f:
-                host_ip_map = json.load(f)
+                data = json.load(f)
+                host_ip_map = data.get("hosts", {})
             # Ensure each host record has the correct structure
             for host in host_ip_map:
                 if "interfaces" not in host_ip_map[host]:
@@ -58,8 +60,9 @@ def load_data():
 def save_data():
     """Save data to file"""
     try:
+        data = {"hosts": host_ip_map}
         with open(DATA_FILE, "w") as f:
-            json.dump(host_ip_map, f, indent=2)
+            json.dump(data, f, indent=2)
         print(f"Saved {len(host_ip_map)} hosts to {DATA_FILE}")
     except Exception as e:
         print(f"Error saving data: {e}")
@@ -83,6 +86,16 @@ def create_backup():
     try:
         shutil.copy2(DATA_FILE, backup_file)
         print(f"Created backup: {backup_file}")
+
+        # Clean up old backups, keep only the latest 10
+        backup_files = [f for f in os.listdir(BACKUP_DIR) if f.startswith("host_ip_data_") and f.endswith(".json")]
+        if len(backup_files) > 10:
+            backup_files.sort(reverse=True)  # Sort by name descending (newest first)
+            files_to_delete = backup_files[10:]  # Keep first 10, delete the rest
+            for file in files_to_delete:
+                os.remove(os.path.join(BACKUP_DIR, file))
+                print(f"Deleted old backup: {file}")
+
     except Exception as e:
         print(f"Error creating backup: {e}")
 
@@ -99,10 +112,66 @@ def check_auth(data):
     if server_password is None:
         return True  # No password required
 
-    if not data or "password" not in data:
+    if not data:
         return False
 
-    return data["password"] == server_password
+    # Check for token first
+    if "token" in data:
+        for host, host_info in host_ip_map.items():
+            if host_info.get("token") == data["token"]:
+                # Check if token is expired (1 hour)
+                token_time = datetime.fromisoformat(host_info["token_timestamp"])
+                if (datetime.now() - token_time).total_seconds() > 3600:  # 1 hour
+                    del host_ip_map[host]["token"]
+                    del host_ip_map[host]["token_timestamp"]
+                    save_data()  # Save after removing expired token
+                    return False
+                return True
+
+    # Fallback to password for initial auth
+    if "password" in data and data["password"] == server_password:
+        return True
+
+    return False
+
+
+@app.route("/auth", methods=["POST"])
+def authenticate():
+    """Authenticate client and return token"""
+    data = request.get_json()
+
+    if not data or "password" not in data or "host" not in data:
+        return jsonify({"error": "Missing password or host"}), 400
+
+    if data["password"] != server_password:
+        return jsonify({"error": "Authentication failed"}), 401
+
+    # Use hostname as client_id
+    client_id = data["host"]
+
+    # Check if client already has a token
+    if client_id in host_ip_map and "token" in host_ip_map[client_id]:
+        # Check if existing token is still valid
+        token_time = datetime.fromisoformat(host_ip_map[client_id]["token_timestamp"])
+        if (datetime.now() - token_time).total_seconds() <= 3600:  # 1 hour
+            return jsonify({"token": host_ip_map[client_id]["token"]})
+        else:
+            # Token expired, remove it
+            del host_ip_map[client_id]["token"]
+            del host_ip_map[client_id]["token_timestamp"]
+
+    # Generate a new token
+    import uuid
+
+    token = str(uuid.uuid4())
+    if client_id not in host_ip_map:
+        host_ip_map[client_id] = {"interfaces": {}, "last_updated": datetime.now().isoformat()}
+    host_ip_map[client_id]["token"] = token
+    host_ip_map[client_id]["token_timestamp"] = datetime.now().isoformat()
+
+    save_data()  # Save after adding token
+
+    return jsonify({"token": token})
 
 
 @app.route("/publish", methods=["POST"])
@@ -123,18 +192,12 @@ def publish_ip():
     timestamp = datetime.now().isoformat()
 
     if host not in host_ip_map:
-        host_ip_map[host] = {
-            "interfaces": {},
-            "last_updated": timestamp
-        }
+        host_ip_map[host] = {"interfaces": {}, "last_updated": timestamp}
     elif "interfaces" not in host_ip_map[host]:
         print(f"Adding interfaces dictionary for existing host {host}")
         host_ip_map[host]["interfaces"] = {}
 
-    host_ip_map[host]["interfaces"][interface] = {
-        "ip": ip,
-        "last_updated": timestamp
-    }
+    host_ip_map[host]["interfaces"][interface] = {"ip": ip, "last_updated": timestamp}
     host_ip_map[host]["last_updated"] = timestamp
 
     save_data()
@@ -158,10 +221,7 @@ def subscribe():
     filtered_data = {}
     for host in data["hosts"]:
         if host in host_ip_map:
-            filtered_data[host] = {
-                "interfaces": {},
-                "last_updated": host_ip_map[host]["last_updated"]
-            }
+            filtered_data[host] = {"interfaces": {}, "last_updated": host_ip_map[host]["last_updated"]}
 
             # If interfaces are specified, only return those interface information
             if "interfaces" in data and host in data["interfaces"]:
@@ -185,12 +245,16 @@ def subscribe():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='IP Server')
-    parser.add_argument('--host', default='0.0.0.0', help='Server host (default: 0.0.0.0)')
-    parser.add_argument('--port', type=int, default=8080, help='Server port (default: 8080)')
-    parser.add_argument('--backup-interval', type=int, default=DEFAULT_BACKUP_INTERVAL,
-                       help=f'Backup interval in seconds (default: {DEFAULT_BACKUP_INTERVAL})')
-    parser.add_argument('--password', help='Password for client authentication')
+    parser = argparse.ArgumentParser(description="IP Server")
+    parser.add_argument("--host", default="0.0.0.0", help="Server host (default: 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=8080, help="Server port (default: 8080)")
+    parser.add_argument(
+        "--backup-interval",
+        type=int,
+        default=DEFAULT_BACKUP_INTERVAL,
+        help=f"Backup interval in seconds (default: {DEFAULT_BACKUP_INTERVAL})",
+    )
+    parser.add_argument("--password", help="Password for client authentication")
     args = parser.parse_args()
 
     server_password = args.password
