@@ -9,3 +9,4 @@ mapping:
   - "host2:wlp132s0=host2-wifi"
 password: "123"
 excluded_interface_patterns: ["lo", "docker0", "utun.*"]
+subscribe_config: True

@@ -129,6 +129,7 @@ class IPClient:
         subscribe_all=False,
         password=None,
         excluded_interface_patterns=None,
+        subscribe_config=False,
     ):
         self.server_url = server_url
         self.update_interval = update_interval
@@ -139,6 +140,7 @@ class IPClient:
         self.token = None
         self.hostname = socket.gethostname()  # Store hostname for authentication
         self.excluded_interface_patterns = excluded_interface_patterns or EXCLUDED_INTERFACE_PATTERNS
+        self.subscribe_config = subscribe_config
 
         # Set hosts file path based on OS
         self.os_type = platform.system().lower() if not self.dry_run else "fake"
@@ -402,6 +404,10 @@ class IPClient:
                 if self.token:
                     subscribe_data["token"] = self.token
 
+                # Add subscribe_config if enabled
+                if self.subscribe_config:
+                    subscribe_data["subscribe_config"] = True
+
                 # Get IPs from other machines
                 response = requests.post(f"{self.server_url}/subscribe", json=subscribe_data)
                 if response.status_code == 200:
@@ -414,7 +420,7 @@ class IPClient:
                     # Build host_ips dictionary
                     host_ips = {}
                     for host, info in host_mappings.items():
-                        if host in ["new_device_joined", "all_hosts"]:
+                        if host in ["new_device_joined", "all_hosts", "config"]:
                             continue  # Skip metadata
                         for interface, interface_info in info["interfaces"].items():
                             # Skip excluded interfaces
@@ -427,6 +433,33 @@ class IPClient:
                     self.update_hosts(host_ips)
                 else:
                     print(f"Failed to get host mappings: {response.text}")
+
+                # Handle config if received
+                if "config" in host_mappings:
+                    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Received config from server")
+                    if self.config_file:
+                        try:
+                            # Read current local config to preserve publish field
+                            current_config = {}
+                            if os.path.exists(self.config_file):
+                                with open(self.config_file, "r") as f:
+                                    current_config = yaml.safe_load(f) or {}
+
+                            # Get server config
+                            server_config = host_mappings["config"]
+
+                            # Preserve local publish field, update everything else from server
+                            if "publish" in current_config:
+                                server_config["publish"] = current_config["publish"]
+
+                            # Write merged config
+                            with open(self.config_file, "w") as f:
+                                yaml.safe_dump(server_config, f, default_flow_style=False)
+                            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Updated config file with server config (preserved local publish field)")
+                        except Exception as e:
+                            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Error updating config file: {e}")
+                    else:
+                        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] No config file specified, config not saved")
 
                 time.sleep(self.update_interval)
             except Exception as e:
@@ -520,6 +553,11 @@ def main():
         action="append",
         help="Patterns of interfaces to exclude from publishing and subscribing, can be used multiple times",
     )
+    parser.add_argument(
+        "--subscribe-config",
+        action="store_true",
+        help="Subscribe to server config and update local config file",
+    )
 
     args = parser.parse_args()
 
@@ -536,6 +574,7 @@ def main():
     mapping = args.mapping or config.get("mapping")
     password = args.password or config.get("password")
     excluded_interface_patterns = args.excluded_interface_patterns or config.get("excluded_interface_patterns")
+    subscribe_config = args.subscribe_config or config.get("subscribe_config", False)
 
     interfaces = publish.split(",") if isinstance(publish, str) else publish
     subscribe_hosts, subscribe_all = parse_subscribe_hosts(subscribe)
@@ -552,6 +591,7 @@ def main():
         subscribe_all,
         password,
         excluded_interface_patterns,
+        subscribe_config,
     )
     client.run()
 

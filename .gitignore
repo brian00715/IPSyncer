@@ -11,3 +11,4 @@ __pycache__
 **fake_hosts
 service/ipsyncer_client.service
 service/ipsyncer_server.service
+**client_config.yaml

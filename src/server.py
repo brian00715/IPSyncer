@@ -8,6 +8,8 @@ from datetime import datetime
 
 from flask import Flask, jsonify, request
 
+import yaml
+
 app = Flask(__name__)
 
 curr_dir = os.path.dirname(os.path.abspath(__file__))
@@ -17,6 +19,7 @@ DEFAULT_BACKUP_INTERVAL = 7200  # Default backup interval in seconds
 
 # Authentication
 server_password = None
+config_file = None
 
 # Dictionary to store host:interface information
 # Format: {
@@ -174,6 +177,20 @@ def authenticate():
     return jsonify({"token": token})
 
 
+@app.route("/config", methods=["GET"])
+def get_config():
+    """Return server config for clients"""
+    if not config_file or not os.path.exists(config_file):
+        return jsonify({"error": "Config not available"}), 404
+
+    try:
+        with open(config_file, "r") as f:
+            config = yaml.safe_load(f)
+        return jsonify(config)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/publish", methods=["POST"])
 def publish_ip():
     """Receive IP address from client"""
@@ -241,6 +258,15 @@ def subscribe():
     else:
         filtered_data["new_device_joined"] = False
 
+    # Include config if requested
+    if data.get("subscribe_config") and config_file and os.path.exists(config_file):
+        try:
+            with open(config_file, "r") as f:
+                config = yaml.safe_load(f)
+            filtered_data["config"] = config
+        except Exception as e:
+            print(f"Error loading config for client: {e}")
+
     return jsonify(filtered_data)
 
 
@@ -255,9 +281,11 @@ if __name__ == "__main__":
         help=f"Backup interval in seconds (default: {DEFAULT_BACKUP_INTERVAL})",
     )
     parser.add_argument("--password", help="Password for client authentication")
+    parser.add_argument("--client-config", help="Config file to sync to clients")
     args = parser.parse_args()
 
     server_password = args.password
+    config_file = args.client_config
 
     print(f"Backup interval: {args.backup_interval}")
     if args.password:
