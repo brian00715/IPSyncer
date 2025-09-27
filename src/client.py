@@ -456,6 +456,24 @@ class IPClient:
                             with open(self.config_file, "w") as f:
                                 yaml.safe_dump(server_config, f, default_flow_style=False)
                             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Updated config file with server config (preserved local publish field)")
+
+                            # Reload mapping configuration and update hosts immediately
+                            if "mapping" in server_config:
+                                self.interface_mapping = parse_interface_mapping(server_config["mapping"])
+                                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Reloaded hostname mapping: {self.interface_mapping}")
+
+                                # Get current host IPs and update hosts file immediately with new mapping
+                                current_host_ips = {}
+                                for host, info in host_mappings.items():
+                                    if host != "config" and isinstance(info, dict) and "interfaces" in info:
+                                        for interface_name, interface_info in info["interfaces"].items():
+                                            if isinstance(interface_info, dict) and "ip" in interface_info:
+                                                hostname = self.get_hostname(host, interface_name)
+                                                current_host_ips[hostname] = interface_info["ip"]
+
+                                if current_host_ips:
+                                    self.update_hosts(current_host_ips)
+                                    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Updated hosts file immediately with new mapping configuration")
                         except Exception as e:
                             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Error updating config file: {e}")
                     else:
