@@ -4,13 +4,13 @@ After=network.target
 
 [Service]
 Type=simple
-User=<USER>
+User=<USER> # Change to your user
 Group=<USER>
-WorkingDirectory=<REPO DIR>
+WorkingDirectory=<REPO DIR>/src # Change to your repo directory
 Environment=PYTHONUNBUFFERED=1
-ExecStart=python3 server.py --host 0.0.0.0 --port <PORT> --backup-interval <INTERVAL>
+ExecStart=python3 server.py --host 0.0.0.0 --port <PORT> --backup-interval <INTERVAL> # adapt to your needs
 Restart=always
 RestartSec=3
 
 [Install]
-WantedBy=multi-user.target 
+WantedBy=multi-user.target

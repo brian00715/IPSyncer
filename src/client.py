@@ -468,7 +468,7 @@ class IPClient:
                                     if host != "config" and isinstance(info, dict) and "interfaces" in info:
                                         for interface_name, interface_info in info["interfaces"].items():
                                             if isinstance(interface_info, dict) and "ip" in interface_info:
-                                                hostname = self.get_hostname(host, interface_name)
+                                                hostname = self.get_hostname_for_interface(host, interface_name)
                                                 current_host_ips[hostname] = interface_info["ip"]
 
                                 if current_host_ips:

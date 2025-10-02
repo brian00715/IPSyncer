@@ -6,9 +6,9 @@ After=network.target
 Type=simple
 User=root
 Group=root
-WorkingDirectory=<REPO DIR>
+WorkingDirectory=<REPO DIR>/src # Change to your repo directory
 Environment=PYTHONUNBUFFERED=1
-ExecStart=<PYTHON DIR>/python client.py --config config.yaml
+ExecStart=<PYTHON DIR>/python client.py --config config.yaml # Change to your Python binary path
 
 RestartSec=3
 

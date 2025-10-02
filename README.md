@@ -14,76 +14,116 @@ A tool for automatically synchronizing LAN device IP addresses across multiple m
 
 ## Installation
 
-```bash
-git clone https://github.com/brian00715/IPSyncer
-cd IPSyncer
-pip install -r requirements.txt
-```
+- server
 
-### Systemd Service Installation
+  ```bash
+  git clone https://github.com/brian00715/IPSyncer ./IPSyncer
+  cd IPSyncer/service
+  cp ipsyncer_server_example.service ipsyncer_server.service
 
-Edit the `.service` files according to your installation directory and custom configuration, then:
+  vim ipsyncer_server.service # adapt to your needs
 
-```bash
-sudo ln -s <REPO DIR>/service/ipsyncer_<server/client>.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable ipsyncer_<server/client>
-```
+  sudo ln -s $(realpath ipsyncer_server.service) /etc/systemd/system/
+
+  sudo systemctl daemon-reload
+  sudo systemctl enable ipsyncer_server.service
+  sudo systemctl start ipsyncer_server.service
+  ```
+- client
+
+  ```bash
+  git clone https://github.com/brian00715/IPSyncer ./IPSyncer
+  cd IPSyncer/service
+  cp ipsyncer_client_example.service ipsyncer_client.service
+
+  vim ipsyncer_client.service # adapt to your needs
+
+  sudo ln -s $(realpath ipsyncer_client.service) /etc/systemd/system/
+  cd ../src
+  cp config-example.yaml config.yaml
+
+  vim config.yaml # adapt to your needs
+
+  sudo systemctl daemon-reload
+  sudo systemctl enable ipsyncer_client.service
+  sudo systemctl start ipsyncer_client.service
+  ```
 
 ## Usage
 
-### Start Server
+### Server
+
+Run (example):
 
 ```python
 python server.py --host 0.0.0.0 --port 8080 --backup-interval 7200 --password your_password
 ```
 
+Systemd example:
+
 ```bash
 sudo systemctl start ipsyncer_server
 ```
 
-### Start Client
+Server command-line parameters (short form):
 
-#### Recommended: YAML Configuration File
+- `--host` (string) - Host/IP to bind the server to. Default: `0.0.0.0`.
+- `--port` (int) - Port to listen on. Default: `8080`.
+- `--backup-interval` (int) - Seconds between automatic backups of server state. Default: `7200`.
+- `--password` (string) - Password required for client authentication. Optional but recommended for remote deployments.
 
-1. Edit `src/config.yaml` and fill in your publish, subscribe, and mapping requirements. For example:
+Equivalent YAML fields (when using a YAML-driven server startup wrapper):
+
+- `host: "0.0.0.0"`
+- `port: 8080`
+- `backup_interval: 7200`
+- `password: "your_password"`
+
+### Client
+
+Recommended: use the YAML configuration file at `src/config.yaml` or pass parameters on the command line. Example YAML (copy `config-example.yaml` to `config.yaml` and edit):
 
 ```yaml
-server: "http://xxx.com:10086"
+server: "http://xxx.com:8000"
 interval: 3600
-password: "your_password"  # Optional, for authentication
-publish: ["wlp132s0", "enp131s0", "cscotun0"]  # Leave empty to publish all interfaces
-subscribe:  # Use 'all' or leave empty to subscribe to all hosts
-    - "simon-omen-ubuntu:tun0+wlp0s20f3"
-    - "unitree-go2:wlan0+eth0"
+password: "your_password" # Optional, for authentication
+publish: ["wlp132s0", "enp131s0", "cscotun0"] # Leave empty to publish all interfaces
+subscribe: # Use 'all' or leave empty to subscribe to all hosts
+  - "simon-omen-ubuntu:tun0+wlp0s20f3"
+  - "unitree-go2:wlan0+eth0"
 mapping:
-    - "simon-omen-ubuntu:tun0=simon-omen-nus-vpn"
+  - "simon-omen-ubuntu:tun0=simon-omen-nus-vpn"
 ```
 
-2. Start with systemd (recommended):
+Client command-line examples:
+
+Start with systemd (recommended):
 
 ```bash
 sudo systemctl start ipsyncer_client
 ```
 
-Or run manually:
+Run manually:
 
 ```bash
 sudo python client.py --config config.yaml
 ```
 
-> Command line parameters still take precedence over YAML configuration. For example:
->
-> ```bash
-> sudo python client.py --config config.yaml --interval 120 --dry-run --password your_password
-> ```
+Client command-line parameters (short form):
 
-#### Legacy Parameters (Not Recommended)
+- `--config` (path) - Path to YAML configuration file. Default: `config.yaml` in the current directory.
+- `--server` (string) - Server URL, e.g. `http://localhost:8080`. Overrides `server` in YAML.
+- `--interval` (int) - Poll/publish interval in seconds. Overrides `interval` in YAML.
+- `--password` (string) - Password for authentication. Overrides `password` in YAML.
+- `--publish` (comma-separated list) - Interfaces to publish. Overrides `publish` in YAML.
+- `--subscribe` (comma-separated list or the literal `all`) - Hosts and interfaces to subscribe to. Overrides `subscribe` in YAML.
+- `--mapping` (comma-separated list) - Custom hostname mapping rules. Overrides `mapping` in YAML.
+- `--dry-run` (flag) - If present, the client will not modify the local hosts file; it will only log changes.
 
-You can still use command line parameters directly:
+Note on precedence: command-line parameters take precedence over YAML configuration values. Example:
 
 ```bash
-sudo python client.py --server http://localhost:8080 --publish tun0,en0 --subscribe host1:en0+eth0 --mapping host1:en0=lan1 --password your_password --dry-run
+sudo python client.py --config config.yaml --interval 120 --dry-run --password your_password
 ```
 
 ## Data Formats
@@ -92,7 +132,7 @@ sudo python client.py --server http://localhost:8080 --publish tun0,en0 --subscr
 
 ```json
 {
-    "password": "your_password"
+  "password": "your_password"
 }
 ```
 
@@ -100,7 +140,7 @@ sudo python client.py --server http://localhost:8080 --publish tun0,en0 --subscr
 
 ```json
 {
-    "token": "uuid-token-string"
+  "token": "uuid-token-string"
 }
 ```
 
@@ -108,8 +148,8 @@ sudo python client.py --server http://localhost:8080 --publish tun0,en0 --subscr
 
 ```json
 {
-    "password": "your_password",
-    "host": "hostname"
+  "password": "your_password",
+  "host": "hostname"
 }
 ```
 
@@ -117,7 +157,7 @@ sudo python client.py --server http://localhost:8080 --publish tun0,en0 --subscr
 
 ```json
 {
-    "token": "generated_token"
+  "token": "generated_token"
 }
 ```
 
@@ -125,10 +165,10 @@ sudo python client.py --server http://localhost:8080 --publish tun0,en0 --subscr
 
 ```json
 {
-    "host": "hostname",
-    "ip": "192.168.1.100",
-    "interface": "en0",
-    "token": "your_token"
+  "host": "hostname",
+  "ip": "192.168.1.100",
+  "interface": "en0",
+  "token": "your_token"
 }
 ```
 
@@ -136,12 +176,12 @@ sudo python client.py --server http://localhost:8080 --publish tun0,en0 --subscr
 
 ```json
 {
-    "hosts": ["host1", "host2"],
-    "interfaces": {
-        "host1": ["en0"],
-        "host2": ["tun0"]
-    },
-    "token": "your_token"
+  "hosts": ["host1", "host2"],
+  "interfaces": {
+    "host1": ["en0"],
+    "host2": ["tun0"]
+  },
+  "token": "your_token"
 }
 ```
 
@@ -149,24 +189,24 @@ sudo python client.py --server http://localhost:8080 --publish tun0,en0 --subscr
 
 ```json
 {
-    "host1": {
-        "interfaces": {
-            "en0": {
-                "ip": "192.168.1.100",
-                "last_updated": "2024-03-21T10:00:00"
-            }
-        }
-    },
-    "host2": {
-        "interfaces": {
-            "tun0": {
-                "ip": "10.0.0.100",
-                "last_updated": "2024-03-21T10:00:00"
-            }
-        }
-    },
-    "new_device_joined": true,
-    "all_hosts": ["host1", "host2", "new_host"]
+  "host1": {
+    "interfaces": {
+      "en0": {
+        "ip": "192.168.1.100",
+        "last_updated": "2024-03-21T10:00:00"
+      }
+    }
+  },
+  "host2": {
+    "interfaces": {
+      "tun0": {
+        "ip": "10.0.0.100",
+        "last_updated": "2024-03-21T10:00:00"
+      }
+    }
+  },
+  "new_device_joined": true,
+  "all_hosts": ["host1", "host2", "new_host"]
 }
 ```
 
